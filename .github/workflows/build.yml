@@ -1,0 +1,196 @@
+name: Build FreeType
+
+on:
+  workflow_dispatch:
+    inputs:
+      freetype_version:
+        description: "FreeType version to build (e.g. 2.13.3)"
+        required: true
+        default: "2.13.3"
+
+env:
+  VERSION: ${{ github.event.inputs.freetype_version }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: windows-latest
+            target: windows-x64
+          - os: macos-13
+            target: macos-x64
+            cmake_extra: -DCMAKE_OSX_ARCHITECTURES=x86_64
+          - os: macos-latest
+            target: macos-arm64
+            cmake_extra: -DCMAKE_OSX_ARCHITECTURES=arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Download FreeType source
+        run: |
+          curl -L -o freetype.tar.gz "https://download.savannah.gnu.org/releases/freetype/freetype-${{ env.VERSION }}.tar.gz"
+          tar xzf freetype.tar.gz
+
+      - name: Install MinGW clang toolchain
+        if: matrix.target == 'windows-x64'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          install: mingw-w64-clang-x86_64-clang mingw-w64-clang-x86_64-cmake mingw-w64-clang-x86_64-ninja
+
+      - name: Build static library (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cmake -S freetype-${{ env.VERSION }} -B build-static \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DFT_DISABLE_BZIP2=ON \
+            -DFT_DISABLE_BROTLI=ON \
+            -DFT_DISABLE_HARFBUZZ=ON \
+            -DFT_DISABLE_PNG=ON \
+            -DFT_DISABLE_ZLIB=ON \
+            ${{ matrix.cmake_extra }}
+          cmake --build build-static --config Release
+
+      - name: Build shared library (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cmake -S freetype-${{ env.VERSION }} -B build-shared \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DBUILD_SHARED_LIBS=ON \
+            -DFT_DISABLE_BZIP2=ON \
+            -DFT_DISABLE_BROTLI=ON \
+            -DFT_DISABLE_HARFBUZZ=ON \
+            -DFT_DISABLE_PNG=ON \
+            -DFT_DISABLE_ZLIB=ON \
+            ${{ matrix.cmake_extra }}
+          cmake --build build-shared --config Release
+
+      - name: Build static library (Windows)
+        if: matrix.target == 'windows-x64'
+        shell: msys2 {0}
+        run: |
+          cmake -S freetype-${{ env.VERSION }} -B build-static \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DFT_DISABLE_BZIP2=ON \
+            -DFT_DISABLE_BROTLI=ON \
+            -DFT_DISABLE_HARFBUZZ=ON \
+            -DFT_DISABLE_PNG=ON \
+            -DFT_DISABLE_ZLIB=ON
+          cmake --build build-static --config Release
+
+      - name: Build shared library (Windows)
+        if: matrix.target == 'windows-x64'
+        shell: msys2 {0}
+        run: |
+          cmake -S freetype-${{ env.VERSION }} -B build-shared \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DBUILD_SHARED_LIBS=ON \
+            -DFT_DISABLE_BZIP2=ON \
+            -DFT_DISABLE_BROTLI=ON \
+            -DFT_DISABLE_HARFBUZZ=ON \
+            -DFT_DISABLE_PNG=ON \
+            -DFT_DISABLE_ZLIB=ON
+          cmake --build build-shared --config Release
+
+      - name: Collect libraries (Linux)
+        if: matrix.target == 'linux-x64'
+        run: |
+          mkdir staging
+          find build-static -name "libfreetype.a" -exec cp {} staging/freetype-${{ matrix.target }}.a \;
+          REAL_SO=$(find build-shared -name "libfreetype.so.*.*.*" | head -1)
+          cp "$REAL_SO" staging/freetype-${{ matrix.target }}.so
+
+      - name: Collect libraries (macOS)
+        if: startsWith(matrix.target, 'macos')
+        run: |
+          mkdir staging
+          find build-static -name "libfreetype.a" -exec cp {} staging/freetype-${{ matrix.target }}.a \;
+          REAL_DYLIB=$(find build-shared -name "libfreetype.*.dylib" ! -type l | head -1)
+          cp "$REAL_DYLIB" staging/freetype-${{ matrix.target }}.dylib
+
+      - name: Collect libraries (Windows)
+        if: matrix.target == 'windows-x64'
+        shell: msys2 {0}
+        run: |
+          mkdir staging
+          find build-static -name "libfreetype.a" -exec cp {} staging/freetype-${{ matrix.target }}.a \;
+          find build-shared -name "libfreetype.dll" -exec cp {} staging/freetype-${{ matrix.target }}.dll \;
+          find build-shared -name "libfreetype.dll.a" -exec cp {} staging/freetype-${{ matrix.target }}.dll.a \;
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: freetype-${{ matrix.target }}
+          path: staging/*
+
+  headers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download FreeType source
+        run: |
+          curl -L -o freetype.tar.gz "https://download.savannah.gnu.org/releases/freetype/freetype-${{ env.VERSION }}.tar.gz"
+          tar xzf freetype.tar.gz
+
+      - name: Package headers
+        run: |
+          cd freetype-${{ env.VERSION }}/include
+          tar czf ../../freetype-include.tar.gz .
+
+      - name: Upload headers
+        uses: actions/upload-artifact@v4
+        with:
+          name: freetype-include
+          path: freetype-include.tar.gz
+
+  release:
+    needs: [build, headers]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List release files
+        run: ls -lh artifacts/
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: FreeType ${{ env.VERSION }}
+          body: |
+            FreeType ${{ env.VERSION }} prebuilt binaries.
+            Built with clang, GNU ABI on all platforms. No optional dependencies.
+
+            **Headers** — `freetype-include.tar.gz` (all platforms)
+
+            **Static libraries**
+            - `freetype-linux-x64.a`
+            - `freetype-windows-x64.a`
+            - `freetype-macos-x64.a`
+            - `freetype-macos-arm64.a`
+
+            **Shared libraries**
+            - `freetype-linux-x64.so`
+            - `freetype-windows-x64.dll` + `freetype-windows-x64.dll.a` (import library)
+            - `freetype-macos-x64.dylib`
+            - `freetype-macos-arm64.dylib`
+          files: artifacts/*
