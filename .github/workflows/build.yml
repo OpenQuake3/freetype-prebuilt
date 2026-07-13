@@ -28,6 +28,7 @@ jobs:
             target: aarch64-macos
             cmake_extra: -DCMAKE_OSX_ARCHITECTURES=arm64
 
+    name: ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -74,7 +75,7 @@ jobs:
           cmake --build build-shared --config Release
 
       - name: Build static library (Windows)
-        if: matrix.target == 'windows-x64'
+        if: matrix.target == 'x86_64-windows-gnu'
         shell: msys2 {0}
         run: |
           cmake -S freetype-${{ env.VERSION }} -B build-static \
@@ -90,7 +91,7 @@ jobs:
           cmake --build build-static --config Release
 
       - name: Build shared library (Windows)
-        if: matrix.target == 'windows-x64'
+        if: matrix.target == 'x86_64-windows-gnu'
         shell: msys2 {0}
         run: |
           cmake -S freetype-${{ env.VERSION }} -B build-shared \
