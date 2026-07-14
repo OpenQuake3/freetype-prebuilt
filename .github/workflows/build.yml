@@ -121,6 +121,7 @@ jobs:
           find build-static -name "libfreetype.a" -exec cp {} staging/freetype-${{ matrix.target }}.a \;
           REAL_DYLIB=$(find build-shared -name "libfreetype.*.dylib" ! -type l | head -1)
           cp "$REAL_DYLIB" staging/freetype-${{ matrix.target }}.dylib
+          install_name_tool -id @executable_path/libfreetype.dylib staging/freetype-${{ matrix.target }}.dylib
 
       - name: Collect libraries (Windows)
         if: matrix.target == 'x86_64-windows-gnu'
