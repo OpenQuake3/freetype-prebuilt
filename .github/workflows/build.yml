@@ -23,10 +23,10 @@ jobs:
             target: x86_64-windows-gnu
           - os: macos-15-intel
             target: x86_64-macos
-            cmake_extra: -DCMAKE_OSX_ARCHITECTURES=x86_64
+            cmake_extra: -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_INSTALL_NAME_DIR=@executable_path
           - os: macos-latest
             target: aarch64-macos
-            cmake_extra: -DCMAKE_OSX_ARCHITECTURES=arm64
+            cmake_extra: -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_INSTALL_NAME_DIR=@executable_path
 
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
